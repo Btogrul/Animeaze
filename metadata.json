@@ -1,0 +1,6 @@
+{
+  "name": "AnimeAze - Anime Platforması",
+  "description": "Azərbaycan dilində A-dan Z-yə Glassmorphism dizaynlı, Qızılı/Sarı vurğulu, Admin paneli, Watch Party və Həftəlik Yayın Təqvimi funksiyalı Anime Platforması",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
