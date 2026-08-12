@@ -5,12 +5,17 @@ import {
 } from 'lucide-react';
 import { Anime, Episode, Character, Studio, Comment, AnimeTrackItem, User } from '../types';
 import { CustomVideoPlayer } from './CustomVideoPlayer';
+import { Language, translations } from '../lib/i18n';
+import { AnimeDetailSkeleton } from './SkeletonLoader';
 
 interface AnimeDetailViewProps {
   animeId: string;
-  currentUser: User;
+  currentUser: User | null;
   onBack: () => void;
   onCreateWatchParty: (animeId: string, episodeId?: string) => void;
+  onOpenAuth?: (reason?: string) => void;
+  currentLang?: Language;
+  onTriggerAchievementAction?: (actionType: 'watch_episode' | 'post_comment' | 'rate_anime' | 'watch_party' | 'bookmark' | 'add_time' | 'wiki', value?: number) => void;
 }
 
 interface RatingStats {
@@ -33,8 +38,12 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   animeId,
   currentUser,
   onBack,
-  onCreateWatchParty
+  onCreateWatchParty,
+  onOpenAuth,
+  currentLang = 'az',
+  onTriggerAchievementAction
 }) => {
+  const t = translations[currentLang];
   const [animeData, setAnimeData] = useState<{
     anime: Anime;
     episodes: Episode[];
@@ -88,6 +97,11 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   };
 
   const handleRateAnime = async (star: number) => {
+    if (!currentUser) {
+      if (onOpenAuth) onOpenAuth('Animeni qiymətləndirmək üçün hesabınıza daxil olun!');
+      return;
+    }
+
     setIsRatingSubmitting(true);
     try {
       const res = await fetch(`/api/anime/${animeId}/rate`, {
@@ -106,6 +120,9 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
 
         if (userTracker) {
           setUserTracker({ ...userTracker, score: star * 2 });
+        }
+        if (onTriggerAchievementAction) {
+          onTriggerAchievementAction('rate_anime', 1);
         }
       }
     } catch (e) {
@@ -128,6 +145,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   };
 
   const fetchUserTracker = async () => {
+    if (!currentUser) return;
     try {
       const res = await fetch(`/api/trackers/${currentUser.id}`);
       if (res.ok) {
@@ -141,6 +159,11 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   };
 
   const handleUpdateTracker = async (status: AnimeTrackItem['status'], progress: number, score: number) => {
+    if (!currentUser) {
+      if (onOpenAuth) onOpenAuth('İzləmə siyahısını yeniləmək üçün daxil olun!');
+      return;
+    }
+
     try {
       const res = await fetch('/api/trackers', {
         method: 'POST',
@@ -164,6 +187,11 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
 
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      if (onOpenAuth) onOpenAuth('Rəy yazmaq üçün hesabınıza daxil olun!');
+      return;
+    }
+
     if (!newCommentText.trim()) return;
 
     try {
@@ -186,6 +214,9 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
         setComments([posted, ...comments]);
         setNewCommentText('');
         setIsSpoiler(false);
+        if (onTriggerAchievementAction) {
+          onTriggerAchievementAction('post_comment', 1);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -209,12 +240,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   };
 
   if (loading || !animeData) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] py-20">
-        <Sparkles className="w-12 h-12 text-amber-400 animate-spin mb-4" />
-        <p className="text-sm font-bold text-amber-300">Anime məlumatları yüklənir...</p>
-      </div>
-    );
+    return <AnimeDetailSkeleton />;
   }
 
   const { anime, episodes, characters, studioInfo, recommendations } = animeData;

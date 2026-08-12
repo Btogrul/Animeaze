@@ -1,23 +1,32 @@
 import React from 'react';
 import { Star, Play, Plus, Check, Eye } from 'lucide-react';
 import { Anime } from '../types';
+import { AnimeCardSkeleton } from './SkeletonLoader';
 
 interface AnimeCardProps {
-  anime: Anime;
-  onSelect: (animeId: string) => void;
+  anime?: Anime;
+  onSelect?: (animeId: string) => void;
   onToggleBookmark?: (animeId: string) => void;
   isBookmarked?: boolean;
+  isLoading?: boolean;
 }
+
+export { AnimeCardSkeleton };
 
 export const AnimeCard: React.FC<AnimeCardProps> = ({
   anime,
   onSelect,
   onToggleBookmark,
-  isBookmarked = false
+  isBookmarked = false,
+  isLoading = false
 }) => {
+  if (isLoading || !anime) {
+    return <AnimeCardSkeleton />;
+  }
+
   return (
     <div 
-      onClick={() => onSelect(anime.id)}
+      onClick={() => onSelect && onSelect(anime.id)}
       className="group relative rounded-2xl glass-card glass-card-hover overflow-hidden flex flex-col cursor-pointer select-none"
     >
       {/* Poster Image Frame */}

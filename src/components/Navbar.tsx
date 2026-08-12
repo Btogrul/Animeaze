@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
 import { 
   Tv, Search, Bell, Shield, User, Sunset, Sun, Moon, 
-  Users, Layers, Bookmark, Sparkles, LogOut, Code, Key, Calendar, ArrowRight, CheckCheck, Globe, Check
+  Users, Layers, Bookmark, Sparkles, LogOut, Code, Key, Calendar, ArrowRight, CheckCheck, Globe, Check, LogIn, Eye
 } from 'lucide-react';
 import { User as UserType, SystemNotification } from '../types';
 import { Language, translations } from '../lib/i18n';
+import { calculateAnimeRankAndLevel } from '../lib/achievements';
 
 interface NavbarProps {
-  currentUser: UserType;
+  currentUser: UserType | null;
   notifications: SystemNotification[];
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onOpenSearch: () => void;
   onOpenAdmin: () => void;
   onOpenMALImport: () => void;
+  onOpenAuth: (tab?: 'signin' | 'signup') => void;
+  onSignOut: () => void;
   onNavigate: (view: 'home' | 'catalog' | 'watchparty' | 'profile' | 'wiki' | 'calendar') => void;
   onSelectNotification?: (notif: SystemNotification) => void;
   onMarkAllNotificationsRead?: () => void;
@@ -31,6 +34,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenAdmin,
   onOpenMALImport,
+  onOpenAuth,
+  onSignOut,
   onNavigate,
   onSelectNotification,
   onMarkAllNotificationsRead,
@@ -141,7 +146,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Right: Search, Language Switcher, MAL Import, Notifications, Admin, Profile */}
         <div className="flex items-center space-x-3">
           
-          {/* Live Search Trigger */}
+          {/* Mobile Search Trigger Icon */}
+          <button
+            onClick={onOpenSearch}
+            className="sm:hidden p-2 rounded-xl bg-slate-900/90 border border-amber-500/30 text-amber-400 hover:bg-slate-800 transition-all cursor-pointer"
+            title={t.searchPlaceholder}
+          >
+            <Search className="w-4 h-4" />
+          </button>
+
+          {/* Desktop Search Trigger */}
           <button
             onClick={onOpenSearch}
             className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-amber-500/20 text-slate-400 hover:text-white hover:border-amber-500/40 transition-all cursor-pointer text-xs"
@@ -312,8 +326,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Admin Panel Access Button if role === 'admin' */}
-          {currentUser.role === 'admin' && (
+          {/* Admin Panel Access Button if logged in and role === 'admin' */}
+          {currentUser && currentUser.role === 'admin' && (
             <button
               onClick={onOpenAdmin}
               className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 text-slate-950 font-bold text-xs gold-glow shadow-md hover:brightness-110 transition-all cursor-pointer"
@@ -323,73 +337,176 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Profile Menu Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="flex items-center space-x-2 pl-2 pr-1 py-1 rounded-xl glass-panel border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer"
-            >
-              <img 
-                src={currentUser.avatar} 
-                alt={currentUser.username} 
-                className="w-7 h-7 rounded-lg object-cover border border-amber-400/50"
-              />
-              <span className="hidden md:inline-block text-xs font-bold text-slate-200 max-w-[90px] truncate">
-                {currentUser.username}
-              </span>
-            </button>
+          {/* Profile or Guest Sign-In Button */}
+          {currentUser ? (() => {
+            const rankInfo = calculateAnimeRankAndLevel(currentUser.exp || 0);
+            return (
+              <div className="relative">
+                <button
+                  onClick={() => setShowUserDropdown(!showUserDropdown)}
+                  className="flex items-center space-x-2 pl-2 pr-1.5 py-1 rounded-xl glass-panel border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer"
+                >
+                  <div className="relative">
+                    <img 
+                      src={currentUser.avatar} 
+                      alt={currentUser.username} 
+                      className="w-7 h-7 rounded-lg object-cover border border-amber-400/50"
+                    />
+                    <span className="absolute -bottom-1 -right-1 text-[9px] leading-none px-1 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black gold-glow">
+                      Lv.{rankInfo.level}
+                    </span>
+                  </div>
+                  <span className="hidden md:inline-block text-xs font-bold text-slate-200 max-w-[90px] truncate">
+                    {currentUser.username}
+                  </span>
+                </button>
 
-            {showUserDropdown && (
-              <div className="absolute right-0 mt-2 w-56 glass-card rounded-2xl p-3 shadow-2xl border border-amber-500/30 z-50">
-                <div className="flex items-center space-x-3 p-2 border-b border-amber-500/20 mb-2">
-                  <img src={currentUser.avatar} alt="" className="w-10 h-10 rounded-xl object-cover border border-amber-400" />
-                  <div>
-                    <div className="text-xs font-bold text-white flex items-center space-x-1">
-                      <span>{currentUser.username}</span>
-                      {currentUser.role === 'admin' && (
-                        <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] rounded font-bold border border-amber-500/30">
-                          ADMIN
-                        </span>
-                      )}
+                {showUserDropdown && (
+                  <div className="absolute right-0 mt-2 w-60 glass-card rounded-2xl p-3 shadow-2xl border border-amber-500/30 z-50 animate-fadeIn space-y-2">
+                    <div className="flex items-center space-x-3 p-2 border-b border-amber-500/20">
+                      <img src={currentUser.avatar} alt="" className="w-10 h-10 rounded-xl object-cover border border-amber-400" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white flex items-center space-x-1">
+                          <span className="truncate">{currentUser.username}</span>
+                          {currentUser.role === 'admin' && (
+                            <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] rounded font-bold border border-amber-500/30 shrink-0">
+                              ADMIN
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-amber-400 font-extrabold truncate block">{rankInfo.rankTitle}</span>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-slate-400 truncate block max-w-[120px]">{currentUser.email}</span>
+
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => { onNavigate('profile'); setShowUserDropdown(false); }}
+                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-amber-500/15 hover:text-amber-300 transition-all cursor-pointer"
+                    >
+                      <User className="w-4 h-4 text-amber-400" />
+                      <span>Profilim & Siyahım</span>
+                    </button>
+
+                    {currentUser.role === 'admin' && (
+                      <button
+                        onClick={() => { onOpenAdmin(); setShowUserDropdown(false); }}
+                        className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-all cursor-pointer sm:hidden"
+                      >
+                        <Shield className="w-4 h-4" />
+                        <span>Admin Paneli</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => { onOpenMALImport(); setShowUserDropdown(false); }}
+                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-amber-500/15 hover:text-amber-300 transition-all cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>MAL / AniList İdxal</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        onSignOut();
+                      }}
+                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/15 transition-all cursor-pointer pt-2 border-t border-slate-800"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Çıxış Et (Qonaq Rejiminə Keç)</span>
+                    </button>
                   </div>
                 </div>
+              )}
+            </div>
+            );
+          })() : (
+            /* Guest Mode Auth Triggers */
+            <div className="flex items-center space-x-2">
+              <span className="hidden xl:inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-bold text-slate-400">
+                <Eye className="w-3.5 h-3.5 text-amber-400" />
+                <span>Qonaq Rejimi</span>
+              </span>
 
-                <div className="space-y-1">
-                  <button
-                    onClick={() => { onNavigate('profile'); setShowUserDropdown(false); }}
-                    className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-amber-500/15 hover:text-amber-300 transition-all cursor-pointer"
-                  >
-                    <User className="w-4 h-4 text-amber-400" />
-                    <span>Profilim & Siyahım</span>
-                  </button>
-
-                  {currentUser.role === 'admin' && (
-                    <button
-                      onClick={() => { onOpenAdmin(); setShowUserDropdown(false); }}
-                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-all cursor-pointer sm:hidden"
-                    >
-                      <Shield className="w-4 h-4" />
-                      <span>Admin Paneli</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => { onOpenMALImport(); setShowUserDropdown(false); }}
-                    className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-amber-500/15 hover:text-amber-300 transition-all cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>MAL / AniList İdxal</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              <button
+                onClick={() => onOpenAuth('signin')}
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs gold-glow shadow-md hover:brightness-110 transition-all cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Giriş / Qeydiyyat</span>
+              </button>
+            </div>
+          )}
 
         </div>
 
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-amber-500/30 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <button
+          onClick={() => onNavigate('home')}
+          className={`flex flex-col items-center space-y-0.5 px-2 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+            activeView === 'home' ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Tv className={`w-5 h-5 ${activeView === 'home' ? 'text-amber-400' : 'text-slate-400'}`} />
+          <span>{t.home}</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('catalog')}
+          className={`flex flex-col items-center space-y-0.5 px-2 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+            activeView === 'catalog' ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Layers className={`w-5 h-5 ${activeView === 'catalog' ? 'text-amber-400' : 'text-slate-400'}`} />
+          <span>{t.catalog}</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('watchparty')}
+          className={`relative flex flex-col items-center space-y-0.5 px-2 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+            activeView === 'watchparty' ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <div className="relative">
+            <Users className={`w-5 h-5 ${activeView === 'watchparty' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          </div>
+          <span>Watch Party</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('calendar')}
+          className={`flex flex-col items-center space-y-0.5 px-2 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+            activeView === 'calendar' ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Calendar className={`w-5 h-5 ${activeView === 'calendar' ? 'text-amber-400' : 'text-slate-400'}`} />
+          <span>{t.calendar}</span>
+        </button>
+
+        <button
+          onClick={() => {
+            if (currentUser) {
+              onNavigate('profile');
+            } else {
+              onOpenAuth('signin');
+            }
+          }}
+          className={`flex flex-col items-center space-y-0.5 px-2 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+            activeView === 'profile' ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {currentUser ? (
+            <img src={currentUser.avatar} alt="" className="w-5 h-5 rounded-full object-cover border border-amber-400" />
+          ) : (
+            <User className="w-5 h-5 text-slate-400" />
+          )}
+          <span>{currentUser ? 'Profil' : 'Giriş'}</span>
+        </button>
+      </nav>
     </header>
   );
 };

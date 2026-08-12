@@ -2,10 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar as CalendarIcon, Clock, Bell, BellOff, Play, CheckCircle2, Flame, Sparkles, Filter, ChevronRight, Tv, ShieldCheck, Layers, Film, X, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AnimeScheduleItem } from '../types';
+import { Language, translations } from '../lib/i18n';
+import { CalendarSkeleton } from './SkeletonLoader';
 
 interface AnimeCalendarProps {
   onSelectAnime: (animeId: string) => void;
   compactMode?: boolean;
+  currentLang?: Language;
 }
 
 const DAYS_OF_WEEK = [
@@ -19,7 +22,8 @@ const DAYS_OF_WEEK = [
   { id: 'sunday', label: 'Bazar', short: 'B.' }
 ];
 
-export const AnimeCalendar: React.FC<AnimeCalendarProps> = ({ onSelectAnime, compactMode = false }) => {
+export const AnimeCalendar: React.FC<AnimeCalendarProps> = ({ onSelectAnime, compactMode = false, currentLang = 'az' }) => {
+  const t = translations[currentLang];
   const [allSchedules, setAllSchedules] = useState<AnimeScheduleItem[]>([]);
   const [schedules, setSchedules] = useState<AnimeScheduleItem[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>('all');
@@ -365,10 +369,9 @@ export const AnimeCalendar: React.FC<AnimeCalendarProps> = ({ onSelectAnime, com
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="text-center py-12"
+            className="py-4"
           >
-            <Sparkles className="w-8 h-8 text-amber-500/40 animate-spin mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-400">Təqvim yüklənir...</p>
+            <CalendarSkeleton />
           </motion.div>
         ) : filteredSchedules.length === 0 ? (
           <motion.div

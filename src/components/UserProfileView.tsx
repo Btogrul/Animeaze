@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { User, AnimeTrackItem, Friend, ActivityFeed, Character, Anime } from '../types';
-import { User as UserIcon, Star, CheckCircle, Clock, BookOpen, Users, Sparkles, Flame, Shield, Camera, AlertCircle, Check, X, Edit3, ShieldAlert, FileText, Filter, Plus, Minus, TrendingUp, BarChart2, Tv, PlayCircle } from 'lucide-react';
+import { User as UserIcon, Star, CheckCircle, Clock, BookOpen, Users, Sparkles, Flame, Shield, Camera, AlertCircle, Check, X, Edit3, ShieldAlert, FileText, Filter, Plus, Minus, TrendingUp, BarChart2, Tv, PlayCircle, Lock, Key, Eye, EyeOff, Radio, Trophy, Zap, Award } from 'lucide-react';
 import { detectBadWords } from '../lib/contentFilter';
+import { Language, translations } from '../lib/i18n';
+import { ANIME_ACHIEVEMENTS, calculateAnimeRankAndLevel } from '../lib/achievements';
+import { AchievementsViewModal } from './AchievementsViewModal';
 
 interface UserProfileViewProps {
-  currentUser: User;
+  currentUser: User | null;
   animes: Anime[];
   onSelectAnime: (animeId: string) => void;
   onUpdateUserAvatar?: (newUrl: string) => void;
   onUpdateUserProfile?: (updatedUser: Partial<User>) => void;
+  onOpenAuth?: (tab?: 'signin' | 'signup') => void;
+  onOpenMALImport?: () => void;
+  currentLang?: Language;
 }
 
 export const ANIME_AVATAR_PRESETS = [
@@ -59,8 +65,45 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   animes,
   onSelectAnime,
   onUpdateUserAvatar,
-  onUpdateUserProfile
+  onUpdateUserProfile,
+  onOpenAuth,
+  onOpenMALImport,
+  currentLang = 'az'
 }) => {
+  const t = translations[currentLang];
+  if (!currentUser) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-6 animate-fadeIn">
+        <div className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/40 flex items-center justify-center mx-auto gold-glow shadow-2xl">
+          <UserIcon className="w-12 h-12 text-amber-400" />
+        </div>
+        <div className="space-y-3">
+          <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs font-black uppercase">
+            Qonaq Rejimi Active
+          </span>
+          <h2 className="text-3xl font-black text-white">Profilinizə Baxmaq Üçün Daxil Olun</h2>
+          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+            Siz hazırda qonaq rejimindəsiniz. Bütün animeləri sərbəst izləyə bilərsiniz! Şəxsi izləmə siyahısı yaratmaq, rəylər yazmaq və profilinizi tənzimləmək üçün hesabınıza daxil olun.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+          <button
+            onClick={() => onOpenAuth?.('signin')}
+            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-sm gold-glow hover:brightness-110 transition-all cursor-pointer shadow-lg"
+          >
+            Hesaba Daxil Ol
+          </button>
+          <button
+            onClick={() => onOpenAuth?.('signup')}
+            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-amber-300 font-extrabold text-sm border border-amber-500/30 transition-all cursor-pointer"
+          >
+            Pulsuz Qeydiyyat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState<'watching' | 'completed' | 'plan_to_watch' | 'dropped'>('watching');
   const [userTrackers, setUserTrackers] = useState<AnimeTrackItem[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -68,6 +111,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   // Edit Profile / Nick Modal State
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAchievementsModal, setShowAchievementsModal] = useState(false);
   const [editNick, setEditNick] = useState(currentUser.username);
   const [editBio, setEditBio] = useState(currentUser.bio || '');
   const [editAvatar, setEditAvatar] = useState(currentUser.avatar || '');
@@ -320,6 +364,93 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Anime Rank & Achievement Showcase Card */}
+      {(() => {
+        const rankInfo = calculateAnimeRankAndLevel(currentUser.exp || 0);
+        const unlockedIds = currentUser.unlockedAchievements || [];
+        return (
+          <div className="p-6 rounded-3xl glass-card border border-amber-500/40 relative overflow-hidden shadow-2xl space-y-5 gold-glow">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500/30 via-yellow-500/20 to-amber-500/30 border border-amber-500/50 flex items-center justify-center text-amber-400 font-black text-2xl shadow-lg shrink-0">
+                  <Trophy className="w-7 h-7 text-amber-400 animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase">
+                      Otaku Level & Anime Rank
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-white flex items-center gap-2 mt-0.5">
+                    <span>{rankInfo.rankTitle}</span>
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowAchievementsModal(true)}
+                className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs gold-glow hover:brightness-110 transition-all cursor-pointer shadow-md flex items-center gap-2"
+              >
+                <Award className="w-4 h-4" />
+                <span>Nailiyyətlərə Və Hall of Fame-ə Bax ({unlockedIds.length}/{ANIME_ACHIEVEMENTS.length})</span>
+              </button>
+            </div>
+
+            {/* Level EXP Bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-amber-300 flex items-center gap-1">
+                  <Zap className="w-4 h-4 text-amber-400 fill-amber-400" /> Level {rankInfo.level} ({rankInfo.currentLevelExp} / {rankInfo.nextLevelExp} EXP)
+                </span>
+                <span className="text-slate-400">Növbəti Levelə: {rankInfo.nextLevelExp - rankInfo.currentLevelExp} EXP</span>
+              </div>
+              <div className="w-full h-3.5 rounded-full bg-slate-950 border border-slate-800 overflow-hidden p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 transition-all duration-500 shadow-md"
+                  style={{ width: `${rankInfo.progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Unlocked Badges Showcase */}
+            <div className="pt-2">
+              <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3">Qazanılmış Anime Nişanları (Badges)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                {ANIME_ACHIEVEMENTS.slice(0, 12).map(ach => {
+                  const isUnlocked = unlockedIds.includes(ach.id);
+                  return (
+                    <div
+                      key={ach.id}
+                      onClick={() => setShowAchievementsModal(true)}
+                      className={`p-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer ${
+                        isUnlocked
+                          ? 'bg-slate-900/90 border-amber-500/40 hover:border-amber-400 shadow-md'
+                          : 'bg-slate-950/40 border-slate-800/60 opacity-40 hover:opacity-60'
+                      }`}
+                    >
+                      <span className="text-2xl shrink-0">{ach.badgeEmoji}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-white truncate">{ach.title}</p>
+                        <p className="text-[9px] text-amber-400 font-bold truncate">{ach.animeTitleRef}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Achievements Full Catalog Modal */}
+      {showAchievementsModal && (
+        <AchievementsViewModal
+          user={currentUser}
+          onClose={() => setShowAchievementsModal(false)}
+          currentLang={currentLang}
+        />
+      )}
 
       {/* Edit Profile & Nick Modal */}
       {showEditModal && (
@@ -677,10 +808,21 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       {/* Anime Tracker List Section */}
       <div className="glass-card rounded-3xl p-6 sm:p-8 border border-amber-500/30 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/20 pb-4">
-          <h2 className="text-lg font-extrabold text-amber-400 flex items-center space-x-2">
-            <BookOpen className="w-5 h-5 text-amber-400" />
-            <span>Şəxsi Anime Siyahım (Anime Tracker)</span>
-          </h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-extrabold text-amber-400 flex items-center space-x-2">
+              <BookOpen className="w-5 h-5 text-amber-400" />
+              <span>Şəxsi Anime Siyahım (Anime Tracker)</span>
+            </h2>
+            {onOpenMALImport && (
+              <button
+                onClick={onOpenMALImport}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer gold-glow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>MyAnimeList-dən Baza İdxal Et</span>
+              </button>
+            )}
+          </div>
 
           {/* Tabs */}
           <div className="flex items-center space-x-2 overflow-x-auto pb-1">

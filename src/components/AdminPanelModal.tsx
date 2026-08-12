@@ -318,7 +318,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             {showAnimeForm && (
               <form onSubmit={handleSaveAnime} className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-3 text-xs">
                 <h4 className="font-bold text-amber-300">Yeni Anime Məlumatları</h4>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     type="text"
                     required
@@ -409,7 +409,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   ))}
                 </select>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     type="number"
                     placeholder="Epizod Nömrəsi"

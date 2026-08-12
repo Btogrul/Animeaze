@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Plus, Star, Users, Flame, Info, ChevronLeft, ChevronRight, Volume2, VolumeX } from 'lucide-react';
 import { Anime } from '../types';
+import { Language, translations } from '../lib/i18n';
+import { HeroCarouselSkeleton } from './SkeletonLoader';
 
 interface HeroCarouselProps {
   featuredAnimes: Anime[];
@@ -8,6 +10,8 @@ interface HeroCarouselProps {
   onCreateWatchParty: (animeId: string) => void;
   onToggleBookmark: (animeId: string) => void;
   bookmarkedIds: string[];
+  currentLang?: Language;
+  isLoading?: boolean;
 }
 
 export const HeroCarousel: React.FC<HeroCarouselProps> = ({
@@ -15,19 +19,24 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
   onSelectAnime,
   onCreateWatchParty,
   onToggleBookmark,
-  bookmarkedIds
+  bookmarkedIds,
+  currentLang = 'az',
+  isLoading = false
 }) => {
+  const t = translations[currentLang];
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    if (featuredAnimes.length === 0) return;
+    if (!featuredAnimes || featuredAnimes.length === 0) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % featuredAnimes.length);
     }, 7000);
     return () => clearInterval(interval);
-  }, [featuredAnimes.length]);
+  }, [featuredAnimes]);
 
-  if (featuredAnimes.length === 0) return null;
+  if (isLoading || !featuredAnimes || featuredAnimes.length === 0) {
+    return <HeroCarouselSkeleton />;
+  }
 
   const currentAnime = featuredAnimes[currentIndex];
   const isBookmarked = bookmarkedIds.includes(currentAnime.id);
@@ -92,7 +101,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
             className="flex items-center space-x-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 text-slate-950 font-black text-sm gold-glow shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer"
           >
             <Play className="w-5 h-5 fill-slate-950" />
-            <span>İndi İzlə</span>
+            <span>{t.viewWatch}</span>
           </button>
 
           <button
@@ -100,7 +109,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
             className="flex items-center space-x-2 px-5 py-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-amber-300 border border-amber-500/40 text-sm font-bold backdrop-blur-md transition-all cursor-pointer"
           >
             <Users className="w-4 h-4 text-amber-400" />
-            <span>Watch Party Yarat</span>
+            <span>{t.createRoom}</span>
           </button>
 
           <button

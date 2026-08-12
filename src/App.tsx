@@ -11,6 +11,11 @@ import { MALImportExportModal } from './components/MALImportExportModal';
 import { WikiView } from './components/WikiView';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { AnimeCalendar } from './components/AnimeCalendar';
+import { AuthModal } from './components/AuthModal';
+import { AnimeGridSkeleton } from './components/SkeletonLoader';
+import { AchievementUnlockModal } from './components/AchievementUnlockModal';
+import { evaluateUserAchievements } from './lib/achievementEngine';
+import { Achievement } from './lib/achievements';
 import { Anime, User, SystemNotification, ActivityFeed } from './types';
 import { Sparkles, Flame, Star, Users, MessageSquare, Clock, Tv, Bookmark, Calendar as CalendarIcon } from 'lucide-react';
 
@@ -19,25 +24,11 @@ import { Language, translations } from './lib/i18n';
 export default function App() {
   const [currentLang, setCurrentLang] = useState<Language>('az');
 
-  const [currentUser, setCurrentUser] = useState<User>({
-    id: "user-admin",
-    username: "test_bot",
-    email: "togrul@example.com",
-    avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80",
-    coverImage: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1000&auto=format&fit=crop&q=80",
-    bio: "AnimeAze Platformasının Baş Admini və Anime Həvəskarı 🎌",
-    role: "admin",
-    favCharacters: ["char-1"],
-    status: "active",
-    joinedDate: "2024-01-15",
-    stats: {
-      watchedEpisodes: 420,
-      hoursWatched: 168,
-      animeCount: 45
-    }
-  });
+  // Default to Guest Mode (currentUser === null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [animes, setAnimes] = useState<Anime[]>([]);
+  const [isLoadingAnimes, setIsLoadingAnimes] = useState(true);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [activities, setActivities] = useState<ActivityFeed[]>([]);
   
@@ -51,14 +42,107 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMALOpen, setIsMALOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authReason, setAuthReason] = useState<string | undefined>(undefined);
+  const [authTab, setAuthTab] = useState<'signin' | 'signup'>('signin');
+  const [unlockedModalAchievement, setUnlockedModalAchievement] = useState<Achievement | null>(null);
+
+  const triggerAchievementAction = async (actionType: 'watch_episode' | 'post_comment' | 'rate_anime' | 'watch_party' | 'bookmark' | 'add_time' | 'wiki', value: number = 1) => {
+    if (!currentUser) return;
+
+    const { updatedUser, newlyUnlocked } = evaluateUserAchievements(currentUser, actionType, value);
+    setCurrentUser(updatedUser);
+
+    if (newlyUnlocked.length > 0) {
+      setUnlockedModalAchievement(newlyUnlocked[0]);
+    }
+
+    try {
+      await fetch(`/api/users/${currentUser.id}/achievements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stats: updatedUser.stats,
+          exp: updatedUser.exp,
+          level: updatedUser.level,
+          unlockedAchievements: updatedUser.unlockedAchievements
+        })
+      });
+    } catch (e) {
+      console.error('Achievement sync error:', e);
+    }
+  };
+
+  // Time spent on site ticker (1 minute interval)
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      triggerAchievementAction('add_time', 1);
+    }, 60000); // every 60s
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // View navigation achievement triggers
+  useEffect(() => {
+    if (!currentUser) return;
+    if (activeView === 'wiki') {
+      triggerAchievementAction('wiki', 1);
+    } else if (activeView === 'watchparty') {
+      triggerAchievementAction('watch_party', 1);
+    }
+  }, [activeView, currentUser]);
 
   useEffect(() => {
     fetchAnimes();
-    fetchNotifications();
     fetchActivities();
   }, []);
 
+  // Dynamic SEO Title & Meta Description Manager for Google Indexing
+  useEffect(() => {
+    if (activeView === 'detail' && selectedAnimeId) {
+      const currentAnime = animes.find(a => a.id === selectedAnimeId);
+      if (currentAnime) {
+        document.title = `${currentAnime.title} (${currentAnime.japaneseTitle || 'Anime'}) - Azərbaycan dilində Onlayn İzlə | AnimeAze`;
+        const metaDesc = document.querySelector('meta[name="description"]');
+        if (metaDesc) {
+          metaDesc.setAttribute('content', `${currentAnime.title} anime serialını Azərbaycan dilində HD keyfiyyətdə, pulsuz və donmadan onlayn izləyin. ${currentAnime.synopsis.slice(0, 150)}...`);
+        }
+      }
+    } else if (activeView === 'catalog') {
+      document.title = "Bütün Animələr və Janrlar Kataloqu | AnimeAze Azərbaycan";
+    } else if (activeView === 'watchparty') {
+      document.title = "Canlı Watch Party və Birlikdə İzləmə Otaqları | AnimeAze";
+    } else if (activeView === 'calendar') {
+      document.title = "Həftəlik Yeni Buraxılışlar və Yayın Təqvimi | AnimeAze";
+    } else if (activeView === 'profile') {
+      document.title = "İstifadəçi Profili və İzləmə Statistikası | AnimeAze";
+    } else if (activeView === 'wiki') {
+      document.title = "Anime Ensiklopediyası, Personajlar və Studiyalar | AnimeAze Wiki";
+    } else {
+      document.title = "AnimeAze - Azərbaycanın Nömrə 1 Onlayn Anime Platforması | Anime İzle HD";
+    }
+  }, [activeView, selectedAnimeId, animes]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchNotifications();
+    } else {
+      setNotifications([]);
+    }
+  }, [currentUser]);
+
+  const handleOpenAuth = (tab: 'signin' | 'signup' = 'signin', reason?: string) => {
+    setAuthTab(tab);
+    setAuthReason(reason);
+    setIsAuthOpen(true);
+  };
+
+  const handleSignOut = () => {
+    setCurrentUser(null);
+  };
+
   const fetchAnimes = async () => {
+    setIsLoadingAnimes(true);
     try {
       const res = await fetch('/api/anime');
       if (res.ok) {
@@ -67,6 +151,8 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsLoadingAnimes(false);
     }
   };
 
@@ -95,9 +181,13 @@ export default function App() {
   };
 
   const handleToggleBookmark = (animeId: string) => {
-    setBookmarkedIds(prev => 
-      prev.includes(animeId) ? prev.filter(id => id !== animeId) : [...prev, animeId]
-    );
+    setBookmarkedIds(prev => {
+      const isAdding = !prev.includes(animeId);
+      if (isAdding) {
+        triggerAchievementAction('bookmark', 1);
+      }
+      return isAdding ? [...prev, animeId] : prev.filter(id => id !== animeId);
+    });
   };
 
   const handleSelectAnime = (id: string) => {
@@ -182,6 +272,8 @@ export default function App() {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenMALImport={() => setIsMALOpen(true)}
+        onOpenAuth={handleOpenAuth}
+        onSignOut={handleSignOut}
         onNavigate={(v) => { setActiveView(v); setSelectedAnimeId(null); }}
         onSelectNotification={handleSelectNotification}
         onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
@@ -192,7 +284,7 @@ export default function App() {
       />
 
       {/* Main Content Router */}
-      <main className="flex-1">
+      <main className="flex-1 pb-20 md:pb-0">
         {activeView === 'home' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-10 animate-fadeIn">
             
@@ -203,6 +295,8 @@ export default function App() {
               onCreateWatchParty={handleCreateWatchPartyFromAnime}
               onToggleBookmark={handleToggleBookmark}
               bookmarkedIds={bookmarkedIds}
+              currentLang={currentLang}
+              isLoading={isLoadingAnimes}
             />
 
             {/* Trending Animes Grid */}
@@ -220,17 +314,21 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {trendingList.map(anime => (
-                  <AnimeCard
-                    key={anime.id}
-                    anime={anime}
-                    onSelect={handleSelectAnime}
-                    onToggleBookmark={handleToggleBookmark}
-                    isBookmarked={bookmarkedIds.includes(anime.id)}
-                  />
-                ))}
-              </div>
+              {isLoadingAnimes ? (
+                <AnimeGridSkeleton count={6} />
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {trendingList.map(anime => (
+                    <AnimeCard
+                      key={anime.id}
+                      anime={anime}
+                      onSelect={handleSelectAnime}
+                      onToggleBookmark={handleToggleBookmark}
+                      isBookmarked={bookmarkedIds.includes(anime.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* Anime Release Calendar Section on Main Page */}
@@ -248,7 +346,7 @@ export default function App() {
                 </button>
               </div>
 
-              <AnimeCalendar onSelectAnime={handleSelectAnime} compactMode={true} />
+              <AnimeCalendar onSelectAnime={handleSelectAnime} compactMode={true} currentLang={currentLang} />
             </section>
 
             {/* Recent Social Activity Feed Widget */}
@@ -281,7 +379,7 @@ export default function App() {
 
         {/* Calendar Dedicated View */}
         {activeView === 'calendar' && (
-          <AnimeCalendar onSelectAnime={handleSelectAnime} compactMode={false} />
+          <AnimeCalendar onSelectAnime={handleSelectAnime} compactMode={false} currentLang={currentLang} />
         )}
 
         {/* Catalog View */}
@@ -291,6 +389,8 @@ export default function App() {
             onSelectAnime={handleSelectAnime}
             onToggleBookmark={handleToggleBookmark}
             bookmarkedIds={bookmarkedIds}
+            currentLang={currentLang}
+            isLoading={isLoadingAnimes}
           />
         )}
 
@@ -300,6 +400,8 @@ export default function App() {
             currentUser={currentUser}
             animes={animes}
             onSelectAnime={handleSelectAnime}
+            onOpenAuth={(reason) => handleOpenAuth('signin', reason)}
+            currentLang={currentLang}
           />
         )}
 
@@ -310,8 +412,13 @@ export default function App() {
             animes={animes}
             onSelectAnime={handleSelectAnime}
             onUpdateUserProfile={(updatedData) => {
-              setCurrentUser(prev => ({ ...prev, ...updatedData }));
+              if (currentUser) {
+                setCurrentUser(prev => prev ? { ...prev, ...updatedData } : null);
+              }
             }}
+            onOpenAuth={(tab) => handleOpenAuth(tab)}
+            onOpenMALImport={() => setIsMALOpen(true)}
+            currentLang={currentLang}
           />
         )}
 
@@ -325,9 +432,19 @@ export default function App() {
             currentUser={currentUser}
             onBack={() => setActiveView('home')}
             onCreateWatchParty={handleCreateWatchPartyFromAnime}
+            onOpenAuth={(reason) => handleOpenAuth('signin', reason)}
+            currentLang={currentLang}
+            onTriggerAchievementAction={triggerAchievementAction}
           />
         )}
       </main>
+
+      {/* Achievement Unlock Celebratory Modal */}
+      <AchievementUnlockModal
+        achievement={unlockedModalAchievement}
+        onClose={() => setUnlockedModalAchievement(null)}
+        userExp={currentUser?.exp || 0}
+      />
 
       {/* Footer */}
       <footer className="mt-16 border-t border-amber-500/20 bg-slate-950/80 backdrop-blur-xl py-8 text-center text-xs text-slate-400">
@@ -355,8 +472,21 @@ export default function App() {
       <MALImportExportModal
         isOpen={isMALOpen}
         onClose={() => setIsMALOpen(false)}
-        userId={currentUser.id}
+        userId={currentUser?.id || 'guest'}
         onSuccessImport={fetchAnimes}
+        onTriggerAchievementAction={triggerAchievementAction}
+      />
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          setIsAuthOpen(false);
+        }}
+        initialReason={authReason}
+        initialTab={authTab}
+        currentLang={currentLang}
       />
 
     </div>

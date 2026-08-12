@@ -53,7 +53,7 @@ export const LiveSearchModal: React.FC<LiveSearchModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
       <div 
-        className="w-full max-w-3xl glass-card rounded-3xl p-6 shadow-2xl border border-amber-500/40 relative overflow-hidden"
+        className="w-full max-w-3xl glass-card rounded-3xl p-6 shadow-2xl border border-amber-500/40 relative max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Ambient Top Glow */}

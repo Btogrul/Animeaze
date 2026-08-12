@@ -6,6 +6,7 @@ export interface User {
   username: string;
   email: string;
   avatar: string;
+  passwordHash?: string;
   pendingAvatar?: string;
   pendingUsername?: string;
   pendingBio?: string;
@@ -18,11 +19,20 @@ export interface User {
   favCharacters: string[]; // character IDs
   status: 'active' | 'banned' | 'muted';
   joinedDate: string;
+  isRegisteredUser?: boolean;
   stats: {
     watchedEpisodes: number;
     hoursWatched: number;
     animeCount: number;
+    commentsCount?: number;
+    ratingsCount?: number;
+    minutesSpent?: number;
+    watchPartyCount?: number;
+    bookmarksCount?: number;
   };
+  level?: number;
+  exp?: number;
+  unlockedAchievements?: string[];
 }
 
 export interface SubtitleTrack {

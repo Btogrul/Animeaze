@@ -2,18 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Users, Send, Play, Pause, Plus, Shield, MessageSquare, Flame, Sparkles, Lock, LockOpen } from 'lucide-react';
 import { WatchPartyRoom, Anime, Episode, User, ChatMessage } from '../types';
 import { CustomVideoPlayer } from './CustomVideoPlayer';
+import { Language, translations } from '../lib/i18n';
 
 interface WatchPartyViewProps {
-  currentUser: User;
+  currentUser: User | null;
   animes: Anime[];
   onSelectAnime: (animeId: string) => void;
+  onOpenAuth?: (reason?: string) => void;
+  currentLang?: Language;
 }
 
 export const WatchPartyView: React.FC<WatchPartyViewProps> = ({
   currentUser,
   animes,
-  onSelectAnime
+  onSelectAnime,
+  onOpenAuth,
+  currentLang = 'az'
 }) => {
+  const t = translations[currentLang];
   const [rooms, setRooms] = useState<WatchPartyRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [activeRoomData, setActiveRoomData] = useState<{
@@ -73,6 +79,10 @@ export const WatchPartyView: React.FC<WatchPartyViewProps> = ({
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      onOpenAuth?.('Canlı izləmə otağı yaratmaq üçün hesabınıza daxil olun!');
+      return;
+    }
     try {
       const res = await fetch('/api/watchparty/room', {
         method: 'POST',
@@ -100,6 +110,10 @@ export const WatchPartyView: React.FC<WatchPartyViewProps> = ({
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !selectedRoomId) return;
+    if (!currentUser) {
+      onOpenAuth?.('Otaqda canlı mesaj yazmaq üçün hesabınıza daxil olun!');
+      return;
+    }
 
     try {
       const res = await fetch(`/api/watchparty/room/${selectedRoomId}/message`, {

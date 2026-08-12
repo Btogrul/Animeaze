@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { 
   Anime, Episode, Character, Studio, User, AnimeTrackItem, 
@@ -9,6 +10,47 @@ import { detectBadWords } from "./src/lib/contentFilter";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
+
+// Security & Privacy Headers Middleware
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
+// Security & Privacy: Rate Limiter for Authentication APIs
+const authRateLimitMap = new Map<string, { count: number; resetTime: number }>();
+function authLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || "global";
+  const now = Date.now();
+  const limitWindow = 60000; // 1 minute window
+  const maxAttempts = 20;
+
+  const record = authRateLimitMap.get(ip);
+  if (!record || now > record.resetTime) {
+    authRateLimitMap.set(ip, { count: 1, resetTime: now + limitWindow });
+    return next();
+  }
+
+  if (record.count >= maxAttempts) {
+    return res.status(429).json({ error: "🔒 Təhlükəsizlik tədbiri: Çox sayda cəhd edildi. Zəhmət olmasa 1 dəqiqə gözləyin." });
+  }
+
+  record.count++;
+  next();
+}
+
+// Password Hashing Helper
+function hashPassword(password: string): string {
+  return crypto.createHash("sha256").update(password + "animeaze_secure_salt_2026").digest("hex");
+}
+
+// Sanitize User Object (Never leak passwordHash or private credentials)
+function sanitizeUser(user: User): Omit<User, 'passwordHash'> {
+  const { passwordHash, ...cleanUser } = user;
+  return cleanUser;
+}
 
 const PORT = 3000;
 
@@ -337,6 +379,23 @@ const initialEpisodes: Episode[] = [
 ];
 
 const initialUsers: User[] = [
+  {
+    id: "user-admin-baghirli",
+    username: "baghirli_togrul",
+    email: "baghirli.togrul@gmail.com",
+    avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80",
+    coverImage: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1000&auto=format&fit=crop&q=80",
+    bio: "AnimeAze Platformasının Baş Admini və Yaradıcısı 🎌",
+    role: "admin",
+    favCharacters: ["char-1", "char-3"],
+    status: "active",
+    joinedDate: "2024-01-15",
+    stats: {
+      watchedEpisodes: 540,
+      hoursWatched: 216,
+      animeCount: 58
+    }
+  },
   {
     id: "user-admin",
     username: "test_bot",
@@ -1216,6 +1275,184 @@ app.get("/api/admin/analytics", (req, res) => {
   res.json({ analytics, users: dbUsers, comments: dbComments });
 });
 
+// Username Uniqueness Check API
+app.get("/api/auth/check-username", (req, res) => {
+  const username = (req.query.username as string || '').trim();
+  const excludeUserId = req.query.excludeUserId as string | undefined;
+
+  if (!username) {
+    return res.json({ available: false, message: "Ləqəb daxil edilməyib." });
+  }
+
+  if (username.length < 3) {
+    return res.json({ available: false, message: "Ləqəb ən azı 3 simvol olmalıdır." });
+  }
+
+  const badWordCheck = detectBadWords(username);
+  if (!badWordCheck.isValid) {
+    return res.json({ available: false, message: `🚫 Qadağan olunmuş söz aşkar edildi! (${badWordCheck.detectedWords.join(', ')})` });
+  }
+
+  const exists = dbUsers.some(u => 
+    (!excludeUserId || u.id !== excludeUserId) && 
+    u.username.toLowerCase() === username.toLowerCase()
+  );
+
+  if (exists) {
+    return res.json({ available: false, message: "Bu ləqəb (nick) artıq götürülüb. Zəhmət olmasa başqa bir nick seçin." });
+  }
+
+  res.json({ available: true, message: "Bu ləqəb istifadəyə uyğundur! ✓" });
+});
+
+// Auth Sign Up / Registration API
+app.post("/api/auth/register", authLimiter, (req, res) => {
+  const { email, username, password, avatar } = req.body;
+
+  if (!email || !username) {
+    return res.status(400).json({ error: "E-poçt və Unikal Nickname (ləqəb) tələb olunur." });
+  }
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: "Şifrə ən azı 6 simvoldan ibarət olmalıdır." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanUsername = username.trim();
+
+  if (cleanUsername.length < 3) {
+    return res.status(400).json({ error: "Ləqəb (nick) ən azı 3 simvol olmalıdır." });
+  }
+
+  const badWordCheck = detectBadWords(cleanUsername);
+  if (!badWordCheck.isValid) {
+    return res.status(400).json({ error: `🚫 Ləqəbdə qadağan olunmuş söz aşkar edildi! (${badWordCheck.detectedWords.join(', ')})` });
+  }
+
+  // Check unique email
+  if (dbUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+    return res.status(400).json({ error: "Bu e-poçt ünvanı ilə artıq profil mövcuddur. Giriş edin." });
+  }
+
+  // Check unique username (NO DUPLICATES ALLOWED)
+  if (dbUsers.some(u => u.username.toLowerCase() === cleanUsername.toLowerCase())) {
+    return res.status(400).json({ error: "Bu ləqəb (nick) artıq götürülüb! Zəhmət olmasa fərqli və unikal bir nick yazın." });
+  }
+
+  // Admin Assignment: First user registering or baghirli.togrul@gmail.com gets admin role
+  const hasRegisteredUsers = dbUsers.some(u => u.isRegisteredUser);
+  const isAdmin = !hasRegisteredUsers || cleanEmail === 'baghirli.togrul@gmail.com';
+
+  const newUser: User = {
+    id: "user-" + Date.now(),
+    username: cleanUsername,
+    email: cleanEmail,
+    avatar: avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80",
+    passwordHash: hashPassword(password),
+    coverImage: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1000&auto=format&fit=crop&q=80",
+    bio: isAdmin ? "AnimeAze Platformasının Baş Admini və Yaradıcısı 🎌" : "AnimeAze platformasının yeni istifadəçisi 👋",
+    role: isAdmin ? "admin" : "user",
+    favCharacters: [],
+    status: "active",
+    joinedDate: new Date().toISOString().split('T')[0],
+    isRegisteredUser: true,
+    stats: {
+      watchedEpisodes: 0,
+      hoursWatched: 0,
+      animeCount: 0
+    }
+  };
+
+  dbUsers.push(newUser);
+  res.json({ message: isAdmin ? "Təbriklər Admin! Qeydiyyat uğurla tamamlandı! ✨" : "Qeydiyyat uğurla tamamlandı! Xoş gəldiniz! 🎉", user: sanitizeUser(newUser) });
+});
+
+// Auth Sign In / Login API
+app.post("/api/auth/login", authLimiter, (req, res) => {
+  const { emailOrUsername, password } = req.body;
+
+  if (!emailOrUsername) {
+    return res.status(400).json({ error: "E-poçt və ya istifadəçi adını daxil edin." });
+  }
+
+  const clean = emailOrUsername.trim().toLowerCase();
+  let user = dbUsers.find(u => u.email.toLowerCase() === clean || u.username.toLowerCase() === clean);
+
+  if (!user) {
+    return res.status(404).json({ error: "Bu məlumatlara uyğun istifadəçi profil tapılmadı." });
+  }
+
+  // Password verification if passwordHash exists
+  if (user.passwordHash && password) {
+    const inputHash = hashPassword(password);
+    if (inputHash !== user.passwordHash) {
+      return res.status(401).json({ error: "E-poçt / Ləqəb və ya şifrə yanlışdır." });
+    }
+  }
+
+  // Ensure baghirli.togrul@gmail.com gets admin role always
+  if (user.email.toLowerCase() === 'baghirli.togrul@gmail.com') {
+    user.role = 'admin';
+  }
+
+  res.json({ message: `Xoş gəldiniz, ${user.username}! ✨`, user: sanitizeUser(user) });
+});
+
+// Auth Google Sign In API
+app.post("/api/auth/google", authLimiter, (req, res) => {
+  const { email, name, picture } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "Google e-poçt ünvanı təyin edilməyib." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  let user = dbUsers.find(u => u.email.toLowerCase() === cleanEmail);
+
+  const hasRegisteredUsers = dbUsers.some(u => u.isRegisteredUser);
+  const isAdmin = !hasRegisteredUsers || cleanEmail === 'baghirli.togrul@gmail.com';
+
+  if (user) {
+    if (isAdmin) user.role = 'admin';
+    if (picture) user.avatar = picture;
+    return res.json({ message: `Google ilə uğurla daxil olundu! Xoş gəldiniz, ${user.username}! ✨`, user: sanitizeUser(user) });
+  }
+
+  // Create new user with Google account, generating a unique username
+  let baseUsername = name ? name.replace(/\s+/g, '_') : cleanEmail.split('@')[0];
+  baseUsername = baseUsername.replace(/[^a-zA-Z0-9_]/g, '');
+  if (baseUsername.length < 3) baseUsername = 'User_' + baseUsername;
+
+  let finalUsername = baseUsername;
+  let counter = 1;
+  while (dbUsers.some(u => u.username.toLowerCase() === finalUsername.toLowerCase())) {
+    finalUsername = `${baseUsername}_${counter}`;
+    counter++;
+  }
+
+  const newUser: User = {
+    id: "user-g-" + Date.now(),
+    username: finalUsername,
+    email: cleanEmail,
+    avatar: picture || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80",
+    coverImage: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1000&auto=format&fit=crop&q=80",
+    bio: isAdmin ? "AnimeAze Platformasının Baş Admini 🎌" : "Google hesabı ilə qoşulan istifadəçi 🚀",
+    role: isAdmin ? "admin" : "user",
+    favCharacters: [],
+    status: "active",
+    joinedDate: new Date().toISOString().split('T')[0],
+    isRegisteredUser: true,
+    stats: {
+      watchedEpisodes: 0,
+      hoursWatched: 0,
+      animeCount: 0
+    }
+  };
+
+  dbUsers.push(newUser);
+  res.json({ message: isAdmin ? "Google Admin hesabı ilə giriş edildi! 👑" : "Google hesabı ilə profil yaradıldı və daxil olundu! 🎉", user: sanitizeUser(newUser) });
+});
+
 // User Profile & Nickname Update Request (with Bad Word Filter & 18+ Content Detector)
 app.post("/api/users/:id/profile", (req, res) => {
   const { newUsername, newBio, newAvatarUrl, newCoverImage } = req.body;
@@ -1318,6 +1555,20 @@ app.post("/api/users/:id/profile", (req, res) => {
     message: "Profiliniz və ləqəbiniz (nick) uğurla yeniləndi! ✨", 
     user 
   });
+});
+
+// User Achievements & Rank Progress Sync API
+app.post("/api/users/:id/achievements", (req, res) => {
+  const user = dbUsers.find(u => u.id === req.params.id);
+  if (!user) return res.status(404).json({ error: "İstifadəçi tapılmadı" });
+
+  const { stats, exp, level, unlockedAchievements } = req.body;
+  if (stats) user.stats = { ...user.stats, ...stats };
+  if (typeof exp === 'number') user.exp = exp;
+  if (typeof level === 'number') user.level = level;
+  if (Array.isArray(unlockedAchievements)) user.unlockedAchievements = unlockedAchievements;
+
+  res.json({ message: "Nailiyyətlər və Level uğurla sinxronlaşdırıldı! ✓", user: sanitizeUser(user) });
 });
 
 // User Profile Avatar Update Request
@@ -1529,6 +1780,104 @@ app.get("/api/admin/users", (req, res) => {
   res.json(dbUsers);
 });
 
+// --- SEO & GOOGLE CRAWLING ENDPOINTS ---
+
+// Robots.txt Handler
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain");
+  res.send(`User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+
+# Google & Yandex Crawlers Optimization for Azerbaijan
+User-agent: Googlebot
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+Sitemap: https://animeaze.az/sitemap.xml
+Host: https://animeaze.az
+`);
+});
+
+// Dynamic XML Sitemap Generator Handler for Google Search Indexing
+app.get("/sitemap.xml", (_req, res) => {
+  res.type("application/xml");
+  const today = new Date().toISOString().split('T')[0];
+
+  const animeUrlsXml = dbAnimes.map(anime => `
+  <url>
+    <loc>https://animeaze.az/anime/${anime.id}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+    <image:image>
+      <image:loc>${anime.bannerImage || anime.posterImage}</image:loc>
+      <image:title>${anime.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</image:title>
+    </image:image>
+  </url>`).join("");
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://animeaze.az/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="az" href="https://animeaze.az/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://animeaze.az/?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://animeaze.az/?lang=ru"/>
+  </url>
+  <url>
+    <loc>https://animeaze.az/catalog</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://animeaze.az/calendar</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://animeaze.az/watch-party</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  ${animeUrlsXml}
+</urlset>`;
+
+  res.send(sitemapXml.trim());
+});
+
+// PWA & Web Manifest
+app.get("/site.webmanifest", (_req, res) => {
+  res.type("application/manifest+json");
+  res.json({
+    name: "AnimeAze - Azərbaycan Anime Platforması",
+    short_name: "AnimeAze",
+    description: "Azərbaycan dilində HD keyfiyyətdə onlayn anime izləmə platforması",
+    start_url: "/",
+    display: "standalone",
+    background_color: "#020617",
+    theme_color: "#020617",
+    orientation: "portrait",
+    icons: [
+      {
+        src: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎌</text></svg>",
+        sizes: "192x192 512x512",
+        type: "image/svg+xml"
+      }
+    ]
+  });
+});
+
 // User Role Update / Ban API
 app.post("/api/admin/users/role", (req, res) => {
   const { targetUserId, email, newRole, newStatus } = req.body;
@@ -1542,6 +1891,118 @@ app.post("/api/admin/users/role", (req, res) => {
     return res.json({ message: "İstifadəçi statusu yeniləndi", user });
   }
   res.status(404).json({ error: "E-poçt ünvanına uyğun istifadəçi tapılmadı" });
+});
+
+// MyAnimeList RapidAPI Proxy Endpoints
+const MAL_RAPIDAPI_HOST = "myanimelist.p.rapidapi.com";
+const MAL_RAPIDAPI_KEY = process.env.MAL_RAPIDAPI_KEY || "a005368adfmsh9475ffec9ce47d5p19cc0cjsn3af963af6e73";
+
+app.get("/api/mal/genres", async (req, res) => {
+  const type = (req.query.type as string) === "anime" ? "anime" : "manga";
+  try {
+    const response = await fetch(`https://${MAL_RAPIDAPI_HOST}/v2/${type}/genres`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": MAL_RAPIDAPI_HOST,
+        "x-rapidapi-key": MAL_RAPIDAPI_KEY
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`MAL API returned status ${response.status}`);
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching MAL genres:", error);
+    res.status(500).json({ error: "MyAnimeList janrlarını çəkmək mümkün olmadı" });
+  }
+});
+
+app.get("/api/mal/search", async (req, res) => {
+  const query = (req.query.q as string) || "Naruto";
+  const type = (req.query.type as string) === "manga" ? "manga" : "anime";
+  try {
+    const response = await fetch(`https://${MAL_RAPIDAPI_HOST}/v2/${type}/search?q=${encodeURIComponent(query)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": MAL_RAPIDAPI_HOST,
+        "x-rapidapi-key": MAL_RAPIDAPI_KEY
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`MAL Search API returned status ${response.status}`);
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("Error searching MAL:", error);
+    res.status(500).json({ error: "MyAnimeList axtarışı zamanı xəta baş verdi" });
+  }
+});
+
+app.post("/api/mal/import-to-viewlist", (req, res) => {
+  const { userId, item, listType = "watching" } = req.body;
+  if (!item || !item.title) {
+    return res.status(400).json({ error: "İmport etmək üçün etibarlı MyAnimeList elementi təqdim olunmalıdır" });
+  }
+
+  const generatedId = `mal-${item.myanimelist_id || item.id || Date.now()}`;
+  
+  // Check if already in dbAnimes
+  let existing = dbAnimes.find(a => a.id === generatedId || a.title.toLowerCase() === item.title.toLowerCase());
+  if (!existing) {
+    existing = {
+      id: generatedId,
+      title: item.title,
+      japaneseTitle: item.title,
+      slug: (item.title || 'anime').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      synopsis: item.description || "MyAnimeList verilənlər bazasından idxal edilmiş anime/manga kontenti.",
+      posterImage: item.picture_url || "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80",
+      bannerImage: item.picture_url || "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80",
+      score: 8.8,
+      scoredBy: 15000,
+      airedYear: 2024,
+      season: "Payız",
+      status: "Davam edir",
+      type: "TV",
+      episodesCount: 24,
+      genres: ["MyAnimeList", "Top Genre"],
+      studio: "MyAnimeList Verified",
+      ageRating: "13+",
+      duration: "24 dəq",
+      featured: false,
+      trending: true,
+      views: 12000,
+      bookmarksCount: 3500
+    };
+    dbAnimes.push(existing);
+  }
+
+  // Update user's tracking item
+  let userTracker = dbTrackers.find(t => t.userId === userId && t.animeId === existing.id);
+  if (!userTracker) {
+    userTracker = {
+      id: `track-${Date.now()}`,
+      userId: userId || "user-1",
+      animeId: existing.id,
+      status: listType as any,
+      progress: listType === "completed" ? 24 : 1,
+      score: 10,
+      updatedAt: new Date().toISOString()
+    };
+    dbTrackers.push(userTracker);
+  } else {
+    userTracker.status = listType as any;
+    userTracker.updatedAt = new Date().toISOString();
+  }
+
+  res.json({
+    message: `"${item.title}" müvəffəqiyyətlə izləmə siyahınıza əlavə edildi! 🎉`,
+    importedAnime: existing,
+    tracker: userTracker
+  });
 });
 
 // --- VITE MIDDLEWARE SETUP FOR DEV / PROD SERVING ---
